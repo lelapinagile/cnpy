@@ -57,7 +57,7 @@ struct central_directory {
 };
 
 [[noreturn]] void bad_zip(const fs::path& p, const std::string& why) {
-    throw format_error("'" + detail::utf8(p) + "' is not a valid .npz archive: " + why);
+    throw format_error(std::format("'{}' is not a valid .npz archive: {}", detail::utf8(p), why));
 }
 
 std::uint32_t crc32_of(std::uint32_t crc, std::span<const std::byte> data) noexcept {
@@ -378,7 +378,8 @@ struct npz_reader::impl {
     }
 
     void verify(const zip_entry& z, std::uint32_t crc) const {
-        if (crc != z.crc) throw format_error("CRC-32 mismatch for '" + z.name + "' in '" + detail::utf8(path) + "'");
+        if (crc != z.crc)
+            throw format_error(std::format("CRC-32 mismatch for '{}' in '{}'", z.name, detail::utf8(path)));
     }
 
     [[nodiscard]] static ndarray finish(const header_info& h, std::shared_ptr<std::byte> buffer) {
@@ -391,7 +392,7 @@ struct npz_reader::impl {
     }
 
     [[nodiscard]] ndarray load_stored(const zip_entry& z, std::uint64_t off) const {
-        if (z.csize != z.usize) bad_zip(path, "stored member '" + z.name + "' has inconsistent sizes");
+        if (z.csize != z.usize) bad_zip(path, std::format("stored member '{}' has inconsistent sizes", z.name));
         header_info h;
         if (base) {
             h = detail::read_header(mapped(off, z.usize));
@@ -399,7 +400,7 @@ struct npz_reader::impl {
             h = detail::read_header(*f, off, z.usize);
         }
         if (z.usize != h.header_size + h.nbytes)
-            throw format_error("member '" + z.name + "' size does not match its .npy header");
+            throw format_error(std::format("member '{}' size does not match its .npy header", z.name));
 
         const std::uint64_t data_off = off + h.header_size;
         if (base) {
@@ -427,14 +428,14 @@ struct npz_reader::impl {
         const auto first_n = static_cast<std::size_t>(std::min<std::uint64_t>(z.usize, first.size()));
         inf.read(std::span(first).first(first_n));
         const detail::header_prefix pre = detail::parse_header_prefix(std::span(first).first(first_n));
-        if (pre.header_size > z.usize) bad_zip(path, "truncated .npy header in '" + z.name + "'");
+        if (pre.header_size > z.usize) bad_zip(path, std::format("truncated .npy header in '{}'", z.name));
 
         std::vector<std::byte> header(pre.header_size);
         std::copy_n(first.begin(), first_n, header.begin());
         inf.read(std::span(header).subspan(first_n));
         const header_info h = detail::read_header(header);
         if (z.usize != h.header_size + h.nbytes)
-            throw format_error("member '" + z.name + "' size does not match its .npy header");
+            throw format_error(std::format("member '{}' size does not match its .npy header", z.name));
 
         auto buffer = detail::allocate(h.nbytes);
         inf.read({buffer.get(), h.nbytes});
@@ -449,7 +450,7 @@ struct npz_reader::impl {
         switch (z.method) {
         case method_stored: return load_stored(z, off);
         case method_deflate: return load_deflated(z, off);
-        default: throw format_error("unsupported zip compression method " + std::to_string(z.method));
+        default: throw format_error(std::format("unsupported zip compression method {}", z.method));
         }
     }
 };
@@ -496,7 +497,7 @@ std::size_t npz_reader::size() const noexcept {
 ndarray npz_reader::load(std::string_view name) const {
     const auto it = impl_->index.find(name);
     if (it == impl_->index.end())
-        throw error("no array named '" + std::string(name) + "' in '" + detail::utf8(impl_->path) + "'");
+        throw error(std::format("no array named '{}' in '{}'", name, detail::utf8(impl_->path)));
     return impl_->load(impl_->entries[it->second]);
 }
 
@@ -680,10 +681,10 @@ void npz_writer::add(std::string_view name, std::span<const std::byte> bytes, co
     detail::check_bytes(bytes, type, shape);
 
     zip_entry z;
-    z.name = std::string(name) + ".npy";
+    z.name = std::format("{}.npy", name);
     if (z.name.size() > u16_max) throw std::invalid_argument("npz_writer: array name too long");
     if (impl_->names.contains(z.name))
-        throw std::invalid_argument("npz_writer: duplicate array name '" + std::string(name) + "'");
+        throw std::invalid_argument(std::format("npz_writer: duplicate array name '{}'", name));
     if (!is_ascii(z.name)) z.flags |= flag_utf8;
     z.method = c.level == 0 ? method_stored : method_deflate;
     z.local_offset = impl_->pos;

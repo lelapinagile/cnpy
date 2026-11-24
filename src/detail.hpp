@@ -4,10 +4,16 @@
 #include <cnpy/cnpy.hpp>
 
 #include <cstdint>
+#include <filesystem>
+#include <format>
 #include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+
+namespace cnpy {
+namespace fs = std::filesystem; // private to the implementation
+}
 
 namespace cnpy::detail {
 

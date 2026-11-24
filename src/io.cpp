@@ -25,9 +25,8 @@ namespace cnpy {
 
 namespace {
 std::string io_message(const std::string& what, const fs::path& path, std::error_code ec) {
-    std::string msg = what + ": '" + detail::utf8(path) + "'";
-    if (ec) msg += ": " + ec.message();
-    return msg;
+    if (ec) return std::format("{}: '{}': {}", what, detail::utf8(path), ec.message());
+    return std::format("{}: '{}'", what, detail::utf8(path));
 }
 } // namespace
 
@@ -272,7 +271,8 @@ file& file::operator=(file&& other) noexcept {
 }
 
 void file::read_exact_at(std::uint64_t offset, std::span<std::byte> out) const {
-    if (read_at(offset, out) != out.size()) throw format_error("unexpected end of file in '" + utf8(path_) + "'");
+    if (read_at(offset, out) != out.size())
+        throw format_error(std::format("unexpected end of file in '{}'", utf8(path_)));
 }
 
 } // namespace detail

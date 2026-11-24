@@ -30,7 +30,7 @@ bool valid_itemsize(char kind, std::size_t n) noexcept {
 dtype dtype::parse(std::string_view descr) {
     const std::string original(descr);
     auto fail = [&](const char* why) -> format_error {
-        return format_error("unsupported dtype descriptor '" + original + "': " + why);
+        return format_error(std::format("unsupported dtype descriptor '{}': {}", original, why));
     };
 
     dtype d;
@@ -89,11 +89,7 @@ dtype dtype::parse(std::string_view descr) {
 }
 
 std::string dtype::str() const {
-    std::string s;
-    s.push_back(static_cast<char>(order));
-    s.push_back(kind);
-    s += std::to_string(kind == 'U' ? itemsize / 4 : itemsize);
-    return s;
+    return std::format("{}{}{}", static_cast<char>(order), kind, kind == 'U' ? itemsize / 4 : itemsize);
 }
 
 std::size_t element_count(std::span<const std::size_t> shape) {
@@ -188,7 +184,7 @@ ndarray ndarray::as_native() const {
 }
 
 void ndarray::type_mismatch(const cnpy::dtype& requested) const {
-    std::string msg = "array has dtype '" + dtype_.str() + "' but was accessed as '" + requested.str() + "'";
+    std::string msg = std::format("array has dtype '{}' but was accessed as '{}'", dtype_.str(), requested.str());
     if (!dtype_.is_native()) msg += " (foreign byte order: use as_native())";
     throw dtype_error(msg);
 }
@@ -199,18 +195,16 @@ void ndarray::require_writable() const {
 
 void ndarray::check_size(std::size_t expected, std::size_t actual) {
     if (expected != actual)
-        throw std::invalid_argument("shape describes " + std::to_string(expected) + " elements but " +
-                                    std::to_string(actual) + " were given");
+        throw std::invalid_argument(std::format("shape describes {} elements but {} were given", expected, actual));
 }
 
 std::size_t ndarray::linear_index(std::span<const std::size_t> index) const {
     if (index.size() != shape_.size())
-        throw std::out_of_range("array has " + std::to_string(shape_.size()) + " dimensions, got " +
-                                std::to_string(index.size()) + " indices");
+        throw std::out_of_range(std::format("array has {} dimensions, got {} indices", shape_.size(), index.size()));
     for (std::size_t d = 0; d < index.size(); ++d)
         if (index[d] >= shape_[d])
-            throw std::out_of_range("index " + std::to_string(index[d]) + " out of range for axis " +
-                                    std::to_string(d) + " with size " + std::to_string(shape_[d]));
+            throw std::out_of_range(
+                std::format("index {} out of range for axis {} with size {}", index[d], d, shape_[d]));
     std::size_t linear = 0;
     if (fortran_order_) {
         for (std::size_t d = index.size(); d-- > 0;)

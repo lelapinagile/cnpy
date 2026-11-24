@@ -41,14 +41,16 @@ set_target_properties(cnpy PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR})
 
-include(GenerateExportHeader)
-generate_export_header(cnpy
-    BASE_NAME CNPY
-    EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/include/cnpy/export.hpp)
+# The export header records whether this is a shared or static build, so consumers need no
+# compile definitions (which plain -lcnpy / pkg-style consumers would otherwise have to know about).
 get_target_property(_cnpy_type cnpy TYPE)
-if(_cnpy_type STREQUAL "STATIC_LIBRARY")
-    target_compile_definitions(cnpy PUBLIC CNPY_STATIC_DEFINE)
+if(_cnpy_type STREQUAL "SHARED_LIBRARY")
+    set(CNPY_SHARED 1)
+else()
+    set(CNPY_SHARED 0)
 endif()
+configure_file(cmake/export.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/include/cnpy/export.hpp @ONLY)
+target_compile_definitions(cnpy PRIVATE CNPY_BUILDING_LIBRARY)
 
 include(GNUInstallDirs)
 target_include_directories(cnpy PUBLIC

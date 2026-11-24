@@ -57,8 +57,9 @@ cnpy::ndarray w = r.load("weights");
 
 ## Building
 
-The library needs a C++20 compiler (GCC 11+, Clang 14+, MSVC 19.30+, Apple Clang 15+), CMake 3.21+ and
-zlib. CI tests it on Linux (GCC, Clang), macOS and Windows (MSVC), with ASan and UBSan.
+The library needs a C++20 compiler with `<format>` (GCC 13+, Clang 17+, MSVC 19.30+ or Apple Clang 15+
+with a macOS deployment target of 13.3 or later), CMake 3.21+ and zlib. CI tests it on Linux (GCC, Clang),
+macOS and Windows (MSVC), with ASan and UBSan.
 
 ### With Conan 2 (recommended)
 
@@ -101,6 +102,9 @@ You can also add it with `add_subdirectory(cnpy)` or `FetchContent`.
 | `CNPY_ENABLE_SANITIZERS`  | `OFF`           | AddressSanitizer + UBSan (GCC/Clang)        |
 | `CNPY_WARNINGS_AS_ERRORS` | `OFF`           | `-Werror` / `/WX`                           |
 | `BUILD_SHARED_LIBS`       | `OFF`           | shared library (symbols exported explicitly) |
+
+The installed `cnpy/export.hpp` records whether the library was built static or shared, so a consumer
+needs no extra compile definitions. Linking `libcnpy` and zlib (`-lcnpy -lz`) is enough.
 
 ## API
 
@@ -156,7 +160,7 @@ with the same kind and size are compatible: an `int64` array can be read as `lon
 | cnpy 1.x | cnpy 2 |
 |---|---|
 | `#include "cnpy.h"` | `#include <cnpy/cnpy.hpp>` |
-| `cnpy::npy_load(std::string)` | `cnpy::load_npy(fs::path)` |
+| `cnpy::npy_load(std::string)` | `cnpy::load_npy(std::filesystem::path)` |
 | `cnpy::npy_save(f, ptr, shape, "w")` | `cnpy::save_npy(f, std::span(ptr, n), shape)` |
 | `cnpy::npy_save(f, ptr, shape, "a")` | `cnpy::append_npy(f, std::span(ptr, n), shape)` |
 | `cnpy::npz_save(z, name, ptr, shape, "w"/"a")` | `cnpy::save_npz(z, name, std::span(ptr, n), shape, npz_mode::truncate/append)` |

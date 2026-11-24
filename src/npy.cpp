@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <iterator>
 #include <limits>
 
 namespace cnpy {
@@ -16,16 +17,22 @@ constexpr std::string_view magic = "\x93NUMPY";
 
 // --------------------------------------------------------------------------- writing headers
 
-std::string shape_repr(std::span<const std::size_t> shape) {
-    // Mirrors Python's repr(tuple): (), (3,), (3, 4)
-    std::string s = "(";
-    for (std::size_t i = 0; i < shape.size(); ++i) {
-        if (i != 0) s += ", ";
-        s += std::to_string(shape[i]);
+/// Appends Python's repr() of the shape tuple: (), (3,), (3, 4)
+void append_shape_repr(std::string& out, std::span<const std::size_t> shape) {
+    out += '(';
+    for (std::size_t i = 0; i < shape.size(); ++i)
+        std::format_to(std::back_inserter(out), "{}{}", i ? ", " : "", shape[i]);
+    if (shape.size() == 1) out += ',';
+    out += ')';
+}
+
+std::size_t decimal_digits(std::size_t v) noexcept {
+    std::size_t n = 1;
+    while (v >= 10) {
+        v /= 10;
+        ++n;
     }
-    if (shape.size() == 1) s += ',';
-    s += ')';
-    return s;
+    return n;
 }
 
 std::string wrap(std::string_view dict, std::uint8_t major, std::size_t dict_and_padding) {
@@ -71,7 +78,7 @@ public:
         return true;
     }
     void expect(char c) {
-        if (!consume(c)) fail(std::string("expected '") + c + "'");
+        if (!consume(c)) fail(std::format("expected '{}'", c));
     }
 
     std::string_view string() {
@@ -119,8 +126,7 @@ public:
     }
 
     [[noreturn]] void fail(const std::string& why) const {
-        throw format_error("malformed .npy header (" + why + " at offset " + std::to_string(i_) +
-                           "): " + std::string(s_.substr(0, 200)));
+        throw format_error(std::format("malformed .npy header ({} at offset {}): {}", why, i_, s_.substr(0, 200)));
     }
 
 private:
@@ -139,12 +145,9 @@ std::size_t header_nbytes(const dtype& type, std::span<const std::size_t> shape)
 
 std::string header_dict(const dtype& type, std::span<const std::size_t> shape, bool fortran_order) {
     // Keys in sorted order, formatted exactly like numpy.lib.format._write_array_header.
-    std::string d = "{'descr': '";
-    d += type.str();
-    d += "', 'fortran_order': ";
-    d += fortran_order ? "True" : "False";
-    d += ", 'shape': ";
-    d += shape_repr(shape);
+    std::string d =
+        std::format("{{'descr': '{}', 'fortran_order': {}, 'shape': ", type.str(), fortran_order ? "True" : "False");
+    append_shape_repr(d, shape);
     d += ", }";
     return d;
 }
@@ -153,7 +156,7 @@ std::string make_header(const dtype& type, std::span<const std::size_t> shape, b
     std::string dict = header_dict(type, shape, fortran_order);
     // Spare room so the growth axis can be enlarged in place (numpy >= 1.24 does the same).
     if (!shape.empty()) {
-        const std::size_t digits = std::to_string(fortran_order ? shape.back() : shape.front()).size();
+        const std::size_t digits = decimal_digits(fortran_order ? shape.back() : shape.front());
         if (digits < growth_axis_max_digits) dict.append(growth_axis_max_digits - digits, ' ');
     }
     const std::size_t hlen = dict.size() + 1; // + '\n'
@@ -189,7 +192,7 @@ header_prefix parse_header_prefix(std::span<const std::byte> b) {
         const auto len = load_le<std::uint32_t>(b.data() + 8);
         return {major, npy_prefix_v2, npy_prefix_v2 + std::size_t{len}};
     }
-    throw format_error("unsupported .npy format version " + std::to_string(major));
+    throw format_error(std::format("unsupported .npy format version {}", static_cast<unsigned>(major)));
 }
 
 header_info parse_header_dict(std::string_view dict) {
@@ -214,7 +217,7 @@ header_info parse_header_dict(std::string_view dict) {
             h.shape = p.tuple();
             have_shape = true;
         } else {
-            p.fail("unexpected key '" + std::string(key) + "'");
+            p.fail(std::format("unexpected key '{}'", key));
         }
         if (!p.consume(',')) {
             p.expect('}');
@@ -242,7 +245,7 @@ header_info read_header(const file& f, std::uint64_t offset, std::uint64_t avail
     const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(available, first.size()));
     const std::size_t got = f.read_at(offset, std::span(first).first(want));
     const header_prefix pre = parse_header_prefix(std::span(first).first(got));
-    if (pre.header_size > available) throw format_error("truncated .npy header in '" + utf8(f.path()) + "'");
+    if (pre.header_size > available) throw format_error(std::format("truncated .npy header in '{}'", utf8(f.path())));
 
     std::string dict(pre.header_size - pre.prefix_size, '\0');
     f.read_exact_at(offset + pre.prefix_size, std::as_writable_bytes(std::span(dict)));
@@ -257,9 +260,8 @@ void check_bytes(std::span<const std::byte> bytes, const dtype& type, std::span<
     if (type.itemsize != 0 && n > std::numeric_limits<std::size_t>::max() / type.itemsize)
         throw std::invalid_argument("array byte size overflows size_t");
     if (bytes.size() != n * type.itemsize)
-        throw std::invalid_argument("data size (" + std::to_string(bytes.size()) +
-                                    " bytes) does not match shape and dtype (" + std::to_string(n) + " x " +
-                                    std::to_string(type.itemsize) + " bytes)");
+        throw std::invalid_argument(std::format("data size ({} bytes) does not match shape and dtype ({} x {} bytes)",
+                                                bytes.size(), n, type.itemsize));
 }
 
 } // namespace detail
@@ -272,8 +274,8 @@ using detail::open_mode;
 
 void check_data_size(const file& f, const header_info& h, std::uint64_t file_size) {
     if (file_size - h.header_size < h.nbytes)
-        throw format_error("'" + detail::utf8(f.path()) + "' is truncated: expected " + std::to_string(h.nbytes) +
-                           " data bytes, found " + std::to_string(file_size - h.header_size));
+        throw format_error(std::format("'{}' is truncated: expected {} data bytes, found {}", detail::utf8(f.path()),
+                                       h.nbytes, file_size - h.header_size));
 }
 
 void write_npy(const fs::path& path, std::span<const std::byte> bytes, const dtype& type,
@@ -341,15 +343,16 @@ void append_npy(const fs::path& path, std::span<const std::byte> bytes, const dt
     const header_info h = detail::read_header(f, 0, size);
 
     if (h.type != type)
-        throw dtype_error("append_npy: file has dtype '" + h.type.str() + "', appended data is '" + type.str() + "'");
+        throw dtype_error(
+            std::format("append_npy: file has dtype '{}', appended data is '{}'", h.type.str(), type.str()));
     if (h.fortran_order != fortran_order) throw error("append_npy: memory order (C/Fortran) differs from the file");
     if (h.shape.size() != shape.size())
-        throw error("append_npy: file has " + std::to_string(h.shape.size()) + " dimensions, appended data has " +
-                    std::to_string(shape.size()));
+        throw error(
+            std::format("append_npy: file has {} dimensions, appended data has {}", h.shape.size(), shape.size()));
     const std::size_t growth_axis = fortran_order ? shape.size() - 1 : 0;
     for (std::size_t d = 0; d < shape.size(); ++d)
         if (d != growth_axis && h.shape[d] != shape[d])
-            throw error("append_npy: shape mismatch on axis " + std::to_string(d));
+            throw error(std::format("append_npy: shape mismatch on axis {}", d));
     if (size != h.header_size + h.nbytes) throw format_error("append_npy: unexpected trailing data in file");
 
     shape_t new_shape = h.shape;

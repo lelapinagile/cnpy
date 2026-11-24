@@ -35,8 +35,6 @@
 
 namespace cnpy {
 
-namespace fs = std::filesystem;
-
 static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big,
               "cnpy does not support mixed-endian platforms");
 
@@ -53,12 +51,12 @@ public:
 /// Opening, reading or writing a file failed.
 class CNPY_EXPORT io_error : public error {
 public:
-    io_error(const std::string& what, fs::path path, std::error_code ec = {});
-    [[nodiscard]] const fs::path& path() const noexcept { return path_; }
+    io_error(const std::string& what, std::filesystem::path path, std::error_code ec = {});
+    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
     [[nodiscard]] std::error_code code() const noexcept { return code_; }
 
 private:
-    fs::path path_;
+    std::filesystem::path path_;
     std::error_code code_;
 };
 
@@ -273,7 +271,7 @@ private:
 // ---------------------------------------------------------------------------
 
 /// Reads a whole .npy file into memory. Data in foreign byte order is converted to native order.
-[[nodiscard]] CNPY_EXPORT ndarray load_npy(const fs::path& path);
+[[nodiscard]] CNPY_EXPORT ndarray load_npy(const std::filesystem::path& path);
 
 enum class map_mode {
     read_only,     ///< mutable access throws
@@ -283,18 +281,18 @@ enum class map_mode {
 
 /// Memory-maps a .npy file. Pages are loaded lazily by the OS; nothing is copied.
 /// The byte order is kept as stored; call as_native() for foreign-endian files.
-[[nodiscard]] CNPY_EXPORT ndarray map_npy(const fs::path& path, map_mode mode = map_mode::read_only);
+[[nodiscard]] CNPY_EXPORT ndarray map_npy(const std::filesystem::path& path, map_mode mode = map_mode::read_only);
 
 /// Writes raw bytes as a .npy file (the bytes must match dtype and shape).
-CNPY_EXPORT void save_npy(const fs::path& path, std::span<const std::byte> bytes, const dtype& type,
+CNPY_EXPORT void save_npy(const std::filesystem::path& path, std::span<const std::byte> bytes, const dtype& type,
                           std::span<const std::size_t> shape, bool fortran_order = false);
 
-CNPY_EXPORT void save_npy(const fs::path& path, const ndarray& array);
+CNPY_EXPORT void save_npy(const std::filesystem::path& path, const ndarray& array);
 
 /// Writes `values` with the given shape. The output is byte-identical to numpy.save().
 template <std::ranges::contiguous_range R>
     requires std::ranges::sized_range<R> && element<std::ranges::range_value_t<R>>
-void save_npy(const fs::path& path, const R& values, const shape_t& shape, bool fortran_order = false) {
+void save_npy(const std::filesystem::path& path, const R& values, const shape_t& shape, bool fortran_order = false) {
     using T = std::ranges::range_value_t<R>;
     const std::span<const T> s(std::ranges::data(values), std::ranges::size(values));
     save_npy(path, std::as_bytes(s), dtype::of<T>(), shape, fortran_order);
@@ -303,18 +301,18 @@ void save_npy(const fs::path& path, const R& values, const shape_t& shape, bool 
 /// Writes `values` as a 1-d array.
 template <std::ranges::contiguous_range R>
     requires std::ranges::sized_range<R> && element<std::ranges::range_value_t<R>>
-void save_npy(const fs::path& path, const R& values) {
+void save_npy(const std::filesystem::path& path, const R& values) {
     save_npy(path, values, shape_t{std::ranges::size(values)});
 }
 
 /// Appends data along the growth axis (axis 0, or the last axis for Fortran-ordered files).
 /// Creates the file if it does not exist. The header is rewritten in place whenever possible.
-CNPY_EXPORT void append_npy(const fs::path& path, std::span<const std::byte> bytes, const dtype& type,
+CNPY_EXPORT void append_npy(const std::filesystem::path& path, std::span<const std::byte> bytes, const dtype& type,
                             std::span<const std::size_t> shape, bool fortran_order = false);
 
 template <std::ranges::contiguous_range R>
     requires std::ranges::sized_range<R> && element<std::ranges::range_value_t<R>>
-void append_npy(const fs::path& path, const R& values, const shape_t& shape, bool fortran_order = false) {
+void append_npy(const std::filesystem::path& path, const R& values, const shape_t& shape, bool fortran_order = false) {
     using T = std::ranges::range_value_t<R>;
     const std::span<const T> s(std::ranges::data(values), std::ranges::size(values));
     append_npy(path, std::as_bytes(s), dtype::of<T>(), shape, fortran_order);
@@ -322,7 +320,7 @@ void append_npy(const fs::path& path, const R& values, const shape_t& shape, boo
 
 template <std::ranges::contiguous_range R>
     requires std::ranges::sized_range<R> && element<std::ranges::range_value_t<R>>
-void append_npy(const fs::path& path, const R& values) {
+void append_npy(const std::filesystem::path& path, const R& values) {
     append_npy(path, values, shape_t{std::ranges::size(values)});
 }
 
@@ -343,7 +341,7 @@ struct npz_read_options {
 /// load() is safe to call concurrently from several threads.
 class CNPY_EXPORT npz_reader {
 public:
-    explicit npz_reader(const fs::path& path, npz_read_options options = {});
+    explicit npz_reader(const std::filesystem::path& path, npz_read_options options = {});
     ~npz_reader();
     npz_reader(npz_reader&&) noexcept;
     npz_reader& operator=(npz_reader&&) noexcept;
@@ -364,8 +362,9 @@ private:
     std::unique_ptr<impl> impl_;
 };
 
-[[nodiscard]] CNPY_EXPORT npz_t load_npz(const fs::path& path, npz_read_options options = {});
-[[nodiscard]] CNPY_EXPORT ndarray load_npz(const fs::path& path, std::string_view name, npz_read_options options = {});
+[[nodiscard]] CNPY_EXPORT npz_t load_npz(const std::filesystem::path& path, npz_read_options options = {});
+[[nodiscard]] CNPY_EXPORT ndarray load_npz(const std::filesystem::path& path, std::string_view name,
+                                           npz_read_options options = {});
 
 /// How a member is stored in the archive.
 struct compression {
@@ -385,7 +384,7 @@ enum class npz_mode {
 /// destructor, which swallows errors — call close() explicitly to see them).
 class CNPY_EXPORT npz_writer {
 public:
-    explicit npz_writer(const fs::path& path, npz_mode mode = npz_mode::truncate);
+    explicit npz_writer(const std::filesystem::path& path, npz_mode mode = npz_mode::truncate);
     ~npz_writer();
     npz_writer(npz_writer&&) noexcept;
     npz_writer& operator=(npz_writer&&) noexcept;
@@ -423,7 +422,7 @@ private:
 /// Writes (or, with npz_mode::append, adds) a single array to an archive.
 template <std::ranges::contiguous_range R>
     requires std::ranges::sized_range<R> && element<std::ranges::range_value_t<R>>
-void save_npz(const fs::path& path, std::string_view name, const R& values, const shape_t& shape,
+void save_npz(const std::filesystem::path& path, std::string_view name, const R& values, const shape_t& shape,
               npz_mode mode = npz_mode::truncate, compression c = compression::none()) {
     npz_writer w(path, mode);
     w.add(name, values, shape, c);
@@ -432,13 +431,13 @@ void save_npz(const fs::path& path, std::string_view name, const R& values, cons
 
 template <std::ranges::contiguous_range R>
     requires std::ranges::sized_range<R> && element<std::ranges::range_value_t<R>>
-void save_npz(const fs::path& path, std::string_view name, const R& values, npz_mode mode = npz_mode::truncate,
-              compression c = compression::none()) {
+void save_npz(const std::filesystem::path& path, std::string_view name, const R& values,
+              npz_mode mode = npz_mode::truncate, compression c = compression::none()) {
     save_npz(path, name, values, shape_t{std::ranges::size(values)}, mode, c);
 }
 
 /// Writes a whole set of arrays (like numpy.savez / numpy.savez_compressed).
-CNPY_EXPORT void save_npz(const fs::path& path, const npz_t& arrays, compression c = compression::none());
+CNPY_EXPORT void save_npz(const std::filesystem::path& path, const npz_t& arrays, compression c = compression::none());
 
 } // namespace cnpy
 

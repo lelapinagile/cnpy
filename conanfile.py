@@ -75,5 +75,3 @@ class CnpyConan(ConanFile):
         self.cpp_info.set_property("cmake_file_name", "cnpy")
         self.cpp_info.set_property("cmake_target_name", "cnpy::cnpy")
         self.cpp_info.requires = ["zlib::zlib"]
-        if not self.options.shared:
-            self.cpp_info.defines = ["CNPY_STATIC_DEFINE"]
